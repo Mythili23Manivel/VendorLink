@@ -58,7 +58,7 @@ npm install
 Create `.env` file (or copy from `.env.example`):
 
 ```env
-MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/vendor_link?appName=Cluster0
+MONGODB_URI=mongodb+srv://YOUR_USERNAME:YOUR_PASSWORD@YOUR_CLUSTER.mongodb.net/vendor_link?appName=YOUR_APP
 JWT_SECRET=supersecurekey
 PORT=5000
 NODE_ENV=development
