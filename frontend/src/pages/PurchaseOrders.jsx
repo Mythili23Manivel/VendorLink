@@ -13,6 +13,8 @@ export default function PurchaseOrders() {
     totalAmount: 0,
   });
   const [actionError, setActionError] = useState('');
+  const [approvingId, setApprovingId] = useState(null);
+  const [creating, setCreating] = useState(false);
 
   const addItem = () => {
     setFormData({
@@ -23,12 +25,19 @@ export default function PurchaseOrders() {
 
   const updateItem = (i, field, val) => {
     const items = [...formData.items];
-    items[i] = { ...items[i], [field]: field === 'quantity' || field === 'unitPrice' ? Number(val) || 0 : val };
+    items[i] = {
+      ...items[i],
+      [field]:
+        field === 'quantity' || field === 'unitPrice'
+          ? Number(val) || 0
+          : val,
+    };
     const totalAmount = items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
     setFormData({ ...formData, items, totalAmount });
   };
 
   const removeItem = (i) => {
+    if (formData.items.length <= 1) return; // keep at least one item
     const items = formData.items.filter((_, idx) => idx !== i);
     const totalAmount = items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
     setFormData({ ...formData, items, totalAmount });
@@ -37,16 +46,37 @@ export default function PurchaseOrders() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setActionError('');
+    setCreating(true);
+
     const result = await vm.createOrder({
       vendorId: formData.vendorId,
       items: formData.items,
       totalAmount: formData.totalAmount,
     });
+
+    setCreating(false);
+
     if (result.success) {
       setShowModal(false);
-      setFormData({ vendorId: '', items: [{ description: '', quantity: 1, unitPrice: 0 }], totalAmount: 0 });
+      setFormData({
+        vendorId: '',
+        items: [{ description: '', quantity: 1, unitPrice: 0 }],
+        totalAmount: 0,
+      });
     } else {
       setActionError(result.error);
+    }
+  };
+
+  const handleApprove = async (id) => {
+    const ok = window.confirm('Approve this Purchase Order?');
+    if (!ok) return;
+
+    setApprovingId(id);
+    try {
+      await vm.approveOrder(id);
+    } finally {
+      setApprovingId(null);
     }
   };
 
@@ -81,10 +111,11 @@ export default function PurchaseOrders() {
       render: (_, row) =>
         row.status === PO_STATUS.Pending ? (
           <button
-            onClick={() => vm.approveOrder(row._id)}
-            className="text-primary-400 hover:underline text-sm"
+            onClick={() => handleApprove(row._id)}
+            disabled={approvingId === row._id}
+            className="text-primary-400 hover:underline text-sm disabled:opacity-50"
           >
-            Approve
+            {approvingId === row._id ? 'Approving...' : 'Approve'}
           </button>
         ) : null,
     },
@@ -94,6 +125,7 @@ export default function PurchaseOrders() {
     <div>
       <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
         <h1 className="font-display font-bold text-2xl text-white">Purchase Orders</h1>
+
         <div className="flex gap-4">
           <select
             value={vm.statusFilter}
@@ -105,6 +137,7 @@ export default function PurchaseOrders() {
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
+
           <select
             value={vm.vendorFilter}
             onChange={(e) => vm.setVendorFilter(e.target.value)}
@@ -115,6 +148,7 @@ export default function PurchaseOrders() {
               <option key={v._id} value={v._id}>{v.name}</option>
             ))}
           </select>
+
           <button onClick={() => { setShowModal(true); setActionError(''); }} className="btn-primary">
             Create PO
           </button>
@@ -132,14 +166,27 @@ export default function PurchaseOrders() {
       <div className="flex justify-between mt-4 text-slate-400 text-sm">
         <span>Page {vm.page} of {vm.totalPages || 1} ({vm.total} total)</span>
         <div className="flex gap-2">
-          <button disabled={vm.page <= 1} onClick={() => vm.setPage((p) => p - 1)} className="disabled:opacity-50 hover:text-white">Prev</button>
-          <button disabled={vm.page >= vm.totalPages} onClick={() => vm.setPage((p) => p + 1)} className="disabled:opacity-50 hover:text-white">Next</button>
+          <button
+            disabled={vm.page <= 1}
+            onClick={() => vm.setPage((p) => p - 1)}
+            className="disabled:opacity-50 hover:text-white"
+          >
+            Prev
+          </button>
+          <button
+            disabled={vm.page >= vm.totalPages}
+            onClick={() => vm.setPage((p) => p + 1)}
+            className="disabled:opacity-50 hover:text-white"
+          >
+            Next
+          </button>
         </div>
       </div>
 
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Create Purchase Order">
         <form onSubmit={handleSubmit} className="space-y-4">
           {actionError && <div className="text-red-400 text-sm">{actionError}</div>}
+
           <div>
             <label className="block text-slate-400 text-sm mb-1">Vendor</label>
             <select
@@ -154,6 +201,7 @@ export default function PurchaseOrders() {
               ))}
             </select>
           </div>
+
           <div>
             <label className="block text-slate-400 text-sm mb-2">Items</label>
             {formData.items.map((item, i) => (
@@ -163,33 +211,60 @@ export default function PurchaseOrders() {
                   value={item.description}
                   onChange={(e) => updateItem(i, 'description', e.target.value)}
                   className="input-field flex-1"
+                  required
                 />
                 <input
                   type="number"
                   placeholder="Qty"
+                  min={1}
                   value={item.quantity}
                   onChange={(e) => updateItem(i, 'quantity', e.target.value)}
                   className="input-field w-20"
+                  required
                 />
                 <input
                   type="number"
                   placeholder="Price"
+                  min={0}
+                  step="0.01"
                   value={item.unitPrice}
                   onChange={(e) => updateItem(i, 'unitPrice', e.target.value)}
                   className="input-field w-24"
+                  required
                 />
-                <button type="button" onClick={() => removeItem(i)} className="text-red-400">×</button>
+                <button
+                  type="button"
+                  onClick={() => removeItem(i)}
+                  disabled={formData.items.length <= 1}
+                  className="text-red-400 disabled:opacity-40"
+                  title={formData.items.length <= 1 ? 'At least one item is required' : 'Remove item'}
+                >
+                  ×
+                </button>
               </div>
             ))}
-            <button type="button" onClick={addItem} className="text-primary-400 text-sm">+ Add item</button>
+            <button type="button" onClick={addItem} className="text-primary-400 text-sm">
+              + Add item
+            </button>
           </div>
+
           <div>
             <label className="block text-slate-400 text-sm mb-1">Total Amount</label>
-            <input type="number" value={formData.totalAmount} readOnly className="input-field bg-slate-800" />
+            <input
+              type="number"
+              value={formData.totalAmount}
+              readOnly
+              className="input-field bg-slate-800"
+            />
           </div>
+
           <div className="flex gap-2 pt-2">
-            <button type="submit" className="btn-primary">Create</button>
-            <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={creating} className="btn-primary disabled:opacity-50">
+              {creating ? 'Creating...' : 'Create'}
+            </button>
+            <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">
+              Cancel
+            </button>
           </div>
         </form>
       </Modal>
