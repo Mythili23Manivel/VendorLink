@@ -7,11 +7,63 @@ import Vendor from '../models/Vendor.js';
 import Payment from '../models/Payment.js';
 import Invoice from '../models/Invoice.js';
 import PurchaseOrder from '../models/PurchaseOrder.js';
+import { generateGroqResponse } from './groqService.js';
+import { generateGrokResponse, isGrokAvailable } from './grokService.js';
+
 import { calculateRiskScore } from '../utils/riskScore.js';
 
 const MISMATCH_THRESHOLD = 5;
 const OVERDUE_DAYS = 7;
 const HIGH_RISK_THRESHOLD = 50;
+
+/**
+ * Helper to fetch specific vendor context if mentioned in query
+ */
+const getVendorContext = async (query) => {
+  try {
+    const allVendors = await Vendor.find({}, 'name _id').lean();
+    const matchedVendors = allVendors.filter(v => query.toLowerCase().includes(v.name.toLowerCase()));
+
+    if (matchedVendors.length === 0) return null;
+
+    const vendors = await Vendor.find({ _id: { $in: matchedVendors.map(v => v._id) } }).lean();
+
+    // Enrich with recent payment/invoice data for better context
+    const detailedVendors = await Promise.all(vendors.map(async (v) => {
+      const risk = calculateRiskScore(v);
+
+      const [recentPayments, recentInvoices] = await Promise.all([
+        Payment.find({ vendorId: v._id }).sort({ dueDate: -1 }).limit(3).lean(),
+        Invoice.find({ vendorId: v._id }).sort({ createdAt: -1 }).limit(3).lean()
+      ]);
+
+      return {
+        name: v.name,
+        email: v.email,
+        rating: v.rating,
+        delayRate: v.delayRate,
+        mismatchRate: v.mismatchRate,
+        riskScore: risk.score,
+        riskLevel: risk.level,
+        recentPayments: recentPayments.map(p => ({
+          amount: p.amount,
+          status: p.status,
+          dueDate: p.dueDate ? p.dueDate.toISOString().split('T')[0] : 'N/A'
+        })),
+        recentInvoices: recentInvoices.map(i => ({
+          amount: i.invoiceAmount,
+          matched: i.matched,
+          mismatchPercentage: i.mismatchPercentage
+        }))
+      };
+    }));
+
+    return detailedVendors;
+  } catch (error) {
+    console.error('Error fetching vendor context:', error);
+    return null;
+  }
+};
 
 /**
  * Parse user query and route to appropriate handler
@@ -134,7 +186,7 @@ const getVendorsWithMismatchAbove = async (threshold = 10) => {
     email: v.email,
     mismatchRate: v.mismatchRate,
     totalOrders: v.totalOrders,
-    riskScore: calculateRiskScore(v),
+    riskScore: calculateRiskScore(v).score,
   }));
 
   return {
@@ -299,14 +351,35 @@ const getDelayedVendors = async () => {
 };
 
 /**
- * General insights for unmatched queries
+ * General insights for unmatched queries - uses Grok (xAI) when GROK_API_KEY is set, else Groq
  */
 const getGeneralInsights = async (query) => {
   const summary = await getDashboardSummary();
-  return {
-    type: 'general',
-    query,
-    response: `I can help you with: vendor delays, mismatch analysis, high-risk vendors, payment risk prediction, and dashboard summaries. Try asking: "Why is Vendor X delayed?" or "Show vendors with mismatch above 10%" or "Which vendor is high risk?" For now, here's a quick overview: ${summary.response}`,
-    data: summary.data,
+  const vendorContext = await getVendorContext(query);
+
+  const context = {
+    dashboardSummary: summary.data,
+    specificVendorContext: vendorContext ? vendorContext : 'No specific vendor mentioned in query.'
   };
+
+  try {
+    const aiResponse = isGrokAvailable()
+      ? await generateGrokResponse(query, context)
+      : await generateGroqResponse(query, context);
+
+    return {
+      type: 'general',
+      query,
+      response: aiResponse,
+      data: context,
+    };
+  } catch (error) {
+    console.error('AI integration error:', error);
+    return {
+      type: 'general',
+      query,
+      response: `I can help you with: vendor delays, mismatch analysis, high-risk vendors, payment risk prediction, and dashboard summaries. Try asking: "Why is Vendor X delayed?" or "Show vendors with mismatch above 10%" or "Which vendor is high risk?" For now, here's a quick overview: ${summary.response}`,
+      data: summary.data,
+    };
+  }
 };
