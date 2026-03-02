@@ -1,40 +1,64 @@
+import mongoose from 'mongoose';
 import PurchaseOrder from '../models/PurchaseOrder.js';
 
 class PurchaseOrderRepository {
   async create(poData) {
-    return await PurchaseOrder.create(poData);
+    return PurchaseOrder.create(poData);
   }
 
   async findAll(filters = {}, options = {}) {
-    const { page = 1, limit = 10, sort = '-createdAt' } = options;
-    const query = { ...filters };
+    const page = Math.max(parseInt(options.page) || 1, 1);
+    const limit = Math.max(parseInt(options.limit) || 10, 1);
+    const sort = options.sort || '-createdAt';
 
+    const query = { ...filters };
     const skip = (page - 1) * limit;
+
     const [orders, total] = await Promise.all([
-      PurchaseOrder.find(query).sort(sort).skip(skip).limit(limit).populate('vendorId', 'name email').lean(),
+      PurchaseOrder.find(query)
+        .sort(sort)
+        .skip(skip)
+        .limit(limit)
+        .populate('vendorId', 'name email')
+        .lean(),
       PurchaseOrder.countDocuments(query),
     ]);
 
-    return { orders, total, page, totalPages: Math.ceil(total / limit) };
+    return {
+      orders,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   async findById(id) {
-    return await PurchaseOrder.findById(id).populate('vendorId');
+    if (!mongoose.Types.ObjectId.isValid(id)) return null;
+
+    return PurchaseOrder.findById(id)
+      .populate('vendorId', 'name email')
+      .lean();
   }
 
   async update(id, updateData) {
-    return await PurchaseOrder.findByIdAndUpdate(id, updateData, {
+    if (!mongoose.Types.ObjectId.isValid(id)) return null;
+
+    return PurchaseOrder.findByIdAndUpdate(id, updateData, {
       new: true,
       runValidators: true,
-    });
+    }).lean();
   }
 
   async countByVendor(vendorId) {
-    return await PurchaseOrder.countDocuments({ vendorId });
+    if (!mongoose.Types.ObjectId.isValid(vendorId)) return 0;
+
+    return PurchaseOrder.countDocuments({ vendorId });
   }
 
   async countApprovedOrCompletedByVendor(vendorId) {
-    return await PurchaseOrder.countDocuments({
+    if (!mongoose.Types.ObjectId.isValid(vendorId)) return 0;
+
+    return PurchaseOrder.countDocuments({
       vendorId,
       status: { $in: ['Approved', 'Completed'] },
     });
