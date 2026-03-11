@@ -1,0 +1,24 @@
+Starting Test...
+DB Connected
+
+--- Testing Query: "Why is TechSupplies Inc delayed?" ---
+Type: explanation
+Response: Here's why these vendors have delays: Metro Logistics (40% delay rate): High delay rate (40%) indicates frequent late payments. | Office Depot Pro (25% delay rate): 1 payment(s) are currently overdue. | Premium Materials Ltd (8.3% delay rate): Historical data shows delayed delivery patterns. | TechSupplies Inc (6.7% delay rate): Historical data shows delayed delivery patterns. | Global Parts Co (4.5% delay rate): 1 payment(s) are pending.
+
+--- Testing Query: "Show vendors with mismatch above 5%" ---
+Type: list
+Response: Found 4 vendor(s) with mismatch rate above 5%: Global Parts Co (66.67%), Metro Logistics (18%), Office Depot Pro (12.5%), Premium Materials Ltd (5%)
+
+--- Testing Query: "Tell me about Office Depot Pro" ---
+Type: general
+Response: Office Depot Pro has a rating of 4.2, a delay rate of 25%, and a mismatch rate of 12.5%. Their recent payment of $4180 is Overdue, with a due date of February 4, 2026. Additionally, a recent invoice for $4180 is unmatched.
+Wait, specificVendorContext is present.
+Vendor Context Found: Office Depot Pro
+
+--- Testing Query: "Predict payment risk" ---
+Type: prediction
+Response: Payment risk analysis: 1 payment(s) due within 7 days. 0 have high risk of delay based on vendor history.
+
+--- Testing Query: "Summary of dashboard" ---
+Type: summary
+Response: Summary: 5 vendors, 1 pending payments, 3 invoice mismatches. 0 vendors at high risk.
